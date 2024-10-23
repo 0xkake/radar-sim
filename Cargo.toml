@@ -4,5 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = "0.29.1"
+eframe = { version = "0.29.1", features = ["wgpu"] }
 plotters = "0.3.7"
+
+
+[profile.dev]
+opt-level = 3

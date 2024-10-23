@@ -1,10 +1,10 @@
-use eframe::egui::{self, Color32, Rect, Pos2};
+use eframe::egui::{self, Color32, Rect, Pos2, ViewportBuilder};
 
-const SIMULATION_SIZE: usize = 200;
-const DT: f32 = 0.5;
+const X_SIZE: usize = 500;
+const Y_SIZE: usize = 300;
+
+const DT: f32 = 0.1;
 const C: f32 = 1.0;
-const SOURCE_FREQUENCY: f32 = 0.5;
-
 
 struct Matrix {
     x: usize,
@@ -21,16 +21,17 @@ impl Matrix {
 impl std::ops::Index<(usize, usize)> for Matrix {
     type Output = f32;
 
-    fn index(&self, (i, j): (usize, usize)) -> &f32 {
-        &self.data[i * self.y + j]
+    fn index(&self, (x, y): (usize, usize)) -> &f32 {
+        &self.data[x + y * self.x]
     }
 }
 
 impl std::ops::IndexMut<(usize, usize)> for Matrix {
-    fn index_mut(&mut self, (i, j): (usize, usize)) -> &mut f32 {
-        &mut self.data[i * self.y + j]
+    fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut f32 {
+        &mut self.data[x + y * self.x]
     }
 }
+
 
 struct EMField {
     ez: Matrix,
@@ -41,42 +42,37 @@ struct EMField {
 
 impl EMField {
     fn new() -> Self {
-        let ez = Matrix::new(SIMULATION_SIZE, SIMULATION_SIZE);
-        let hx = Matrix::new(SIMULATION_SIZE, SIMULATION_SIZE);
-        let hy = Matrix::new(SIMULATION_SIZE, SIMULATION_SIZE);
+        let ez = Matrix::new(X_SIZE, Y_SIZE);
+        let hx = Matrix::new(X_SIZE, Y_SIZE);
+        let hy = Matrix::new(X_SIZE, Y_SIZE);
         
         EMField { ez, hx, hy, time: 0.0 }
     }
 
     fn update(&mut self) {
-        let t0 = std::time::Instant::now();
-
-        // Update magnetic field components
-        for i in 0..SIMULATION_SIZE-1 {
-            for j in 0..SIMULATION_SIZE-1 {
-                self.hx[(i, j)] -= DT * (self.ez[(i, j+1)] - self.ez[(i, j)]);
-                self.hy[(i, j)] += DT * (self.ez[(i+1, j)] - self.ez[(i, j)]);
+        for y in 0..Y_SIZE-1 {
+            for x in 0..X_SIZE-1 {
+                self.hx[(x, y)] -= DT * (self.ez[(x, y+1)] - self.ez[(x, y)]);
+                self.hy[(x, y)] += DT * (self.ez[(x+1, y)] - self.ez[(x, y)]);
             }
         }
 
-        // Update electric field component
-        for i in 1..SIMULATION_SIZE-1 {
-            for j in 1..SIMULATION_SIZE-1 {
-                self.ez[(i, j)] += C * DT * (
-                    (self.hy[(i, j)] - self.hy[(i-1, j)]) -
-                    (self.hx[(i, j)] - self.hx[(i, j-1)])
+        for y in 1..Y_SIZE-1 {
+            for x in 1..X_SIZE-1 {
+                self.ez[(x, y)] += C * DT * (
+                    (self.hy[(x, y)] - self.hy[(x-1, y)]) -
+                    (self.hx[(x, y)] - self.hx[(x, y-1)])
                 );
             }
         }
 
-        // Add source
-        self.ez[(1, 20)] = (self.time * SOURCE_FREQUENCY).sin();
-        self.ez[(1, 40)] = (self.time * SOURCE_FREQUENCY).sin();
-        self.ez[(1, 60)] = (self.time * SOURCE_FREQUENCY).sin();
-        self.ez[(1, 80)] = (self.time * SOURCE_FREQUENCY).sin();
-        self.time += DT;
+        self.ez[(1, 100)] = (self.time * 0.25).sin();
+        self.ez[(1, 125)] = (self.time * 0.25).sin();
+        self.ez[(1, 150)] = (self.time * 0.25).sin();
+        self.ez[(1, 175)] = (self.time * 0.25).sin();
+        self.ez[(1, 200)] = (self.time * 0.25).sin();
 
-        println!("{:?}", t0.elapsed());
+        self.time += DT;
     }
 }
 
@@ -94,39 +90,39 @@ impl Default for EMWaveApp {
 
 impl eframe::App for EMWaveApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.field.update();
+        let t0 = std::time::Instant::now();
+
+        for _ in 0..15 { self.field.update(); }
+
+        println!("{:?}", t0.elapsed());
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let available_size = ui.available_size();
-            let cell_size = (available_size.x.min(available_size.y) / SIMULATION_SIZE as f32).floor();
-            
-            // Create a custom painting canvas
+            let cell_width = (ui.available_size().x / X_SIZE as f32).floor();
+            let cell_height = (ui.available_size().y / Y_SIZE as f32).floor();
+
             let (response, painter) = ui.allocate_painter(
-                egui::vec2(cell_size * SIMULATION_SIZE as f32, cell_size * SIMULATION_SIZE as f32),
+                egui::vec2(cell_width * X_SIZE as f32, cell_height * Y_SIZE as f32),
                 egui::Sense::hover(),
             );
-            
             let rect = response.rect;
-            
+
             // Draw each cell
-            for i in 0..SIMULATION_SIZE {
-                for j in 0..SIMULATION_SIZE {
-                    let value = self.field.ez[(i, j)] as f32;
+            for x in 0..X_SIZE {
+                for y in 0..Y_SIZE {
+                    let value = self.field.ez[(x, y)] as f32;
                     
-                    let color = if value > 0.0 {
-                        let intensity = 1.0 - value.min(1.0);
-                        Color32::from_rgb(255, (intensity * 255.0) as u8, (intensity * 255.0) as u8)
-                    } else {
-                        let intensity = 1.0 + value.max(-1.0);
-                        Color32::from_rgb((intensity * 255.0) as u8, (intensity * 255.0) as u8, 255)
-                    };
+                    let alpha = (value * 2.0).min(1.0).max(-1.0);
+                    let red = (alpha.max(0.0) * 255.0) as u8;
+                    let blue = (-alpha.min(0.0) * 255.0) as u8;
+
+                    let color = Color32::from_rgb(red, 0, blue);
                     
                     let cell_rect = Rect::from_min_size(
                         Pos2::new(
-                            rect.min.x + i as f32 * cell_size,
-                            rect.min.y + j as f32 * cell_size,
+                            rect.min.x + x as f32 * cell_width,
+                            rect.min.y + y as f32 * cell_height,
                         ),
-                        egui::vec2(cell_size, cell_size),
+                        egui::vec2(cell_width, cell_height),
                     );
                     
                     painter.rect_filled(cell_rect, 0.0, color);
@@ -141,8 +137,11 @@ impl eframe::App for EMWaveApp {
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
+        viewport: ViewportBuilder::default().with_inner_size((1020.0, 620.0)),
         ..Default::default()
     };
+
+
     
     eframe::run_native(
         "Radar simulation",
