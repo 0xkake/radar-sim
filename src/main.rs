@@ -1,11 +1,12 @@
 use eframe::egui::{self, Color32, Rect, Pos2, ViewportBuilder};
 
-const X_SIZE: usize = 500;
-const Y_SIZE: usize = 300;
+const X_SIZE: usize = 100;
+const Y_SIZE: usize = 100;
 
 const DT: f32 = 0.1;
 const C: f32 = 1.0;
 
+#[derive(Clone)]
 struct Matrix {
     x: usize,
     y: usize,
@@ -35,6 +36,7 @@ impl std::ops::IndexMut<(usize, usize)> for Matrix {
 
 struct EMField {
     ez: Matrix,
+    ez_prev: Matrix,
     hx: Matrix,
     hy: Matrix,
     time: f32
@@ -42,14 +44,18 @@ struct EMField {
 
 impl EMField {
     fn new() -> Self {
-        let ez = Matrix::new(X_SIZE, Y_SIZE);
-        let hx = Matrix::new(X_SIZE, Y_SIZE);
-        let hy = Matrix::new(X_SIZE, Y_SIZE);
-        
-        EMField { ez, hx, hy, time: 0.0 }
+        EMField { 
+            ez: Matrix::new(X_SIZE, Y_SIZE),
+            hx: Matrix::new(X_SIZE, Y_SIZE),
+            hy: Matrix::new(X_SIZE, Y_SIZE),
+            ez_prev: Matrix::new(X_SIZE, Y_SIZE),
+            time: 0.0
+        }
     }
 
     fn update(&mut self) {
+        self.ez_prev = self.ez.clone();
+
         for y in 0..Y_SIZE-1 {
             for x in 0..X_SIZE-1 {
                 self.hx[(x, y)] -= DT * (self.ez[(x, y+1)] - self.ez[(x, y)]);
@@ -57,20 +63,43 @@ impl EMField {
             }
         }
 
-        for y in 1..Y_SIZE-1 {
-            for x in 1..X_SIZE-1 {
-                self.ez[(x, y)] += C * DT * (
-                    (self.hy[(x, y)] - self.hy[(x-1, y)]) -
-                    (self.hx[(x, y)] - self.hx[(x, y-1)])
-                );
+        for y in 0..Y_SIZE {
+            for x in 0..X_SIZE {
+                if x == X_SIZE - 1 { 
+                    self.ez[(x, y)] = self.ez_prev[(x - 1, y)] + ((C * DT - 1.0) / (C * DT + 1.0)) * (self.ez[(x - 1, y)] - self.ez_prev[(x, y)]); 
+                } else if x == 0 { 
+                    self.ez[(x, y)] = self.ez_prev[(x + 1, y)] + ((C * DT - 1.0) / (C * DT + 1.0)) * (self.ez[(x + 1, y)] - self.ez_prev[(x, y)]); 
+                } else if y == Y_SIZE - 1 { 
+                    self.ez[(x, y)] = self.ez_prev[(x, y - 1)] + ((C * DT - 1.0) / (C * DT + 1.0)) * (self.ez[(x, y - 1)] - self.ez_prev[(x, y)]); 
+                } else if y == 0 { 
+                    self.ez[(x, y)] = self.ez_prev[(x, y + 1)] + ((C * DT - 1.0) / (C * DT + 1.0)) * (self.ez[(x, y + 1)] - self.ez_prev[(x, y)]); 
+                } else {
+                    self.ez[(x, y)] += C * DT * ((self.hy[(x, y)] - self.hy[(x - 1, y)]) - (self.hx[(x, y)] - self.hx[(x, y - 1)]));
+                }
             }
         }
 
-        self.ez[(1, 100)] = (self.time * 0.25).sin();
-        self.ez[(1, 125)] = (self.time * 0.25).sin();
-        self.ez[(1, 150)] = (self.time * 0.25).sin();
-        self.ez[(1, 175)] = (self.time * 0.25).sin();
-        self.ez[(1, 200)] = (self.time * 0.25).sin();
+        for y in 0..Y_SIZE {
+            for x in 0..X_SIZE {
+                if x > 20 && x < 80 && y > 30 && y < 35 {
+                    self.ez[(x, y)] = 0.0;
+                }
+
+                if x > 20 && x < 80 && y > 65 && y < 70 {
+                    self.ez[(x, y)] = 0.0;
+                }
+
+                if x > 95 && y > 20 && y < 80 {
+                    self.ez[(x, y)] = 0.0;
+                }
+            }
+        }
+        
+        self.ez[(0, 30)] = (self.time * 0.25).sin();
+        self.ez[(0, 40)] = (self.time * 0.25).sin();
+        self.ez[(0, 50)] = (self.time * 0.25).sin();
+        self.ez[(0, 60)] = (self.time * 0.25).sin();
+        self.ez[(0, 70)] = (self.time * 0.25).sin();
 
         self.time += DT;
     }
@@ -92,7 +121,7 @@ impl eframe::App for EMWaveApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let t0 = std::time::Instant::now();
 
-        for _ in 0..15 { self.field.update(); }
+        for _ in 0..5 { self.field.update(); }
 
         println!("{:?}", t0.elapsed());
 
@@ -106,7 +135,6 @@ impl eframe::App for EMWaveApp {
             );
             let rect = response.rect;
 
-            // Draw each cell
             for x in 0..X_SIZE {
                 for y in 0..Y_SIZE {
                     let value = self.field.ez[(x, y)] as f32;
